@@ -11,6 +11,10 @@ public class DualPlayerInput : MonoBehaviour
     [Tooltip("Small vertical lift during swap to avoid immediate re-collision")]
     public float liftOnSwap = 0.02f;
 
+    // (Recommended) Assign the camera followers in Inspector for speed.
+    // If you leave this empty, we will FindObjectsOfType as a fallback.
+    public SimpleFollow2D[] cameraFollowers;
+
 #if ENABLE_INPUT_SYSTEM
     InputAction moveAction;
     InputAction jumpAction;
@@ -32,7 +36,7 @@ public class DualPlayerInput : MonoBehaviour
 
         jumpAction = map.AddAction("Jump", InputActionType.Button, "<Keyboard>/space");
 
-        //Tab to swap
+        // Tab to swap players + cameras
         swapAction = map.AddAction("Swap", InputActionType.Button, "<Keyboard>/tab");
 
         map.Enable();
@@ -54,14 +58,13 @@ public class DualPlayerInput : MonoBehaviour
             if (playerB) playerB.PressJump();
         }
 
-        if (swapAction.WasPerformedThisFrame())
+        if (swapAction.WasPressedThisFrame())
         {
             DoSwap();
         }
 #endif
     }
 
-    //Swap positions
     void DoSwap()
     {
         if (!playerA || !playerB) return;
@@ -70,27 +73,46 @@ public class DualPlayerInput : MonoBehaviour
         var rbB = playerB.GetComponent<Rigidbody2D>();
         if (!rbA || !rbB) return;
 
-        // If using the global freeze, unfreeze
-        CharacterMotor2D.UnfreezeAll();
-
+        // ---- swap positions safely ----
         Vector2 posA = rbA.position;
         Vector2 posB = rbB.position;
-        Vector2 velA = rbA.linearVelocity; 
+        Vector2 velA = rbA.linearVelocity;
         Vector2 velB = rbB.linearVelocity;
-
 
         rbA.linearVelocity = Vector2.zero;
         rbB.linearVelocity = Vector2.zero;
-
 
         float y = liftOnSwap;
         rbA.position = new Vector2(posB.x, posB.y + y);
         rbB.position = new Vector2(posA.x, posA.y + y);
 
-        // Swap momentum
+        // swap momentum
         rbA.linearVelocity = velB;
         rbB.linearVelocity = velA;
 
         Physics2D.SyncTransforms();
+
+        // ---- swap camera targets ----
+        // Prefer assigned followers; otherwise auto-discover in scene.
+        if (cameraFollowers == null || cameraFollowers.Length == 0)
+        {
+            cameraFollowers = Object.FindObjectsByType<SimpleFollow2D>(FindObjectsSortMode.None);
+        }
+
+        foreach (var camFollow in cameraFollowers)
+        {
+            if (!camFollow) continue;
+
+            // If this camera was following A, point it to B; and vice versa.
+            if (camFollow.target == playerA.transform)
+            {
+                camFollow.target = playerB.transform;
+            }
+            else if (camFollow.target == playerB.transform)
+            {
+                camFollow.target = playerA.transform;
+            }
+        }
     }
 }
+
