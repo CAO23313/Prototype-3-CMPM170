@@ -7,6 +7,13 @@ public class CharacterMotor2D : MonoBehaviour
 {
     public float currentSpeed;
 
+    public string characterColor;
+
+    public float minX = -30f;
+    public float maxX = 50f;
+    public float minY = -20f;
+    public float maxY = 20f;
+
     [Header("Movement")]
     public float moveSpeed = 8f;
     public float acceleration = 40f;
@@ -82,6 +89,11 @@ public class CharacterMotor2D : MonoBehaviour
             targetXVel = 0f;
             rb.linearVelocity = new Vector2(0f, rb.linearVelocity.y);
         }
+
+        Vector3 pos = transform.position;
+        pos.x = Mathf.Clamp(pos.x, minX, maxX);
+        pos.y = Mathf.Clamp(pos.y, minY, maxY);
+        transform.position = pos;
     }
 
     void FixedUpdate()
@@ -244,6 +256,18 @@ public class CharacterMotor2D : MonoBehaviour
     public float GetSpeed()
     {
         return rb == null ? 0f : rb.linearVelocity.magnitude;
+    }
+
+    void Start()
+    {
+        if (characterColor == "Red")
+        {
+            gameObject.tag = "RedCharacter";
+        }
+        else if (characterColor == "Green")
+        {
+            gameObject.tag = "GreenCharacter";
+        }
     }
 }
 
