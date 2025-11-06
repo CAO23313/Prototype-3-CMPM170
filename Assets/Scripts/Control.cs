@@ -11,8 +11,6 @@ public class DualPlayerInput : MonoBehaviour
     [Tooltip("Small vertical lift during swap to avoid immediate re-collision")]
     public float liftOnSwap = 0.02f;
 
-    // (Recommended) Assign the camera followers in Inspector for speed.
-    // If you leave this empty, we will FindObjectsOfType as a fallback.
     public SimpleFollow2D[] cameraFollowers;
 
 #if ENABLE_INPUT_SYSTEM
@@ -34,9 +32,10 @@ public class DualPlayerInput : MonoBehaviour
             .With("Up", "<Keyboard>/upArrow").With("Down", "<Keyboard>/downArrow")
             .With("Left", "<Keyboard>/leftArrow").With("Right", "<Keyboard>/rightArrow");
 
-        jumpAction = map.AddAction("Jump", InputActionType.Button, "<Keyboard>/space");
+        jumpAction = map.AddAction("Jump", InputActionType.Button);
+        jumpAction.AddBinding("<Keyboard>/space");
+        jumpAction.AddBinding("<Keyboard>/w");   // <-- also W
 
-        // Tab to swap players + cameras
         swapAction = map.AddAction("Swap", InputActionType.Button, "<Keyboard>/tab");
 
         map.Enable();
@@ -52,6 +51,7 @@ public class DualPlayerInput : MonoBehaviour
         if (playerA) playerA.SetMoveInput(x);
         if (playerB) playerB.SetMoveInput(x);
 
+        // Fires once per press (prevents multi-jumps)
         if (jumpAction.WasPressedThisFrame())
         {
             if (playerA) playerA.PressJump();
@@ -59,9 +59,21 @@ public class DualPlayerInput : MonoBehaviour
         }
 
         if (swapAction.WasPressedThisFrame())
-        {
             DoSwap();
+#else
+        // Legacy fallback (old Input Manager)
+        float x = (Input.GetKey(KeyCode.A) ? -1f : 0f) + (Input.GetKey(KeyCode.D) ? 1f : 0f);
+        if (playerA) playerA.SetMoveInput(x);
+        if (playerB) playerB.SetMoveInput(x);
+
+        if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.W))
+        {
+            if (playerA) playerA.PressJump();
+            if (playerB) playerB.PressJump();
         }
+
+        if (Input.GetKeyDown(KeyCode.Tab))
+            DoSwap();
 #endif
     }
 
@@ -73,11 +85,8 @@ public class DualPlayerInput : MonoBehaviour
         var rbB = playerB.GetComponent<Rigidbody2D>();
         if (!rbA || !rbB) return;
 
-        // ---- swap positions safely ----
-        Vector2 posA = rbA.position;
-        Vector2 posB = rbB.position;
-        Vector2 velA = rbA.linearVelocity;
-        Vector2 velB = rbB.linearVelocity;
+        Vector2 posA = rbA.position, posB = rbB.position;
+        Vector2 velA = rbA.linearVelocity, velB = rbB.linearVelocity;
 
         rbA.linearVelocity = Vector2.zero;
         rbB.linearVelocity = Vector2.zero;
@@ -86,32 +95,19 @@ public class DualPlayerInput : MonoBehaviour
         rbA.position = new Vector2(posB.x, posB.y + y);
         rbB.position = new Vector2(posA.x, posA.y + y);
 
-        // swap momentum
         rbA.linearVelocity = velB;
         rbB.linearVelocity = velA;
 
         Physics2D.SyncTransforms();
 
-        // ---- swap camera targets ----
-        // Prefer assigned followers; otherwise auto-discover in scene.
         if (cameraFollowers == null || cameraFollowers.Length == 0)
-        {
             cameraFollowers = Object.FindObjectsByType<SimpleFollow2D>(FindObjectsSortMode.None);
-        }
 
         foreach (var camFollow in cameraFollowers)
         {
             if (!camFollow) continue;
-
-            // If this camera was following A, point it to B; and vice versa.
-            if (camFollow.target == playerA.transform)
-            {
-                camFollow.target = playerB.transform;
-            }
-            else if (camFollow.target == playerB.transform)
-            {
-                camFollow.target = playerA.transform;
-            }
+            if (camFollow.target == playerA.transform) camFollow.target = playerB.transform;
+            else if (camFollow.target == playerB.transform) camFollow.target = playerA.transform;
         }
     }
 }

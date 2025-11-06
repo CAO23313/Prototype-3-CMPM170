@@ -71,6 +71,7 @@ public class CharacterMotor2D : MonoBehaviour
                      Physics2D.OverlapCircle(groundCheck.position, groundCheckRadius, groundMask);
         if (isGrounded) lastGroundedTime = Time.time;
 
+        // Face direction if not frozen
         if (!globallyFrozen && Mathf.Abs(targetXVel) > 0.05f)
         {
             var s = transform.localScale;
@@ -78,18 +79,26 @@ public class CharacterMotor2D : MonoBehaviour
             transform.localScale = s;
         }
 
+        // Freeze if any player is blocked
         if (!globallyFrozen && AnyBlocked())
             FreezeAll();
 
+        // Unfreeze if a blocked player shows "away from wall" intent (existing rule)
         if (globallyFrozen && AnyBlockedHasUnfreezeIntent())
             UnfreezeAll();
 
+        // NEW: Unfreeze when no one is blocked AND any grounded player is pressing move
+        if (globallyFrozen && !AnyBlocked() && AnyGroundedHasMoveInput())
+            UnfreezeAll();
+
+        // While frozen: stop horizontal only, keep vertical natural
         if (globallyFrozen)
         {
             targetXVel = 0f;
             rb.linearVelocity = new Vector2(0f, rb.linearVelocity.y);
         }
 
+        // World clamp
         Vector3 pos = transform.position;
         pos.x = Mathf.Clamp(pos.x, minX, maxX);
         pos.y = Mathf.Clamp(pos.y, minY, maxY);
@@ -100,7 +109,6 @@ public class CharacterMotor2D : MonoBehaviour
     {
         if (globallyFrozen)
         {
-            // Only kill horizontal motion; let gravity/jumps proceed.
             rb.linearVelocity = new Vector2(0f, rb.linearVelocity.y);
             return;
         }
@@ -137,21 +145,63 @@ public class CharacterMotor2D : MonoBehaviour
 
         foreach (var cp in c.contacts)
         {
-            if (Mathf.Abs(cp.normal.x) > 0.25f) 
+            if (Mathf.Abs(cp.normal.x) > 0.25f)
             {
                 blockedHorizontally = true;
-                lastBlockNormalX = Mathf.Sign(cp.normal.x); 
+                lastBlockNormalX = Mathf.Sign(cp.normal.x);
                 return;
             }
         }
     }
 
+    // ---- Group helpers ----
     static bool AnyBlocked()
     {
         for (int i = 0; i < allMotors.Count; i++)
         {
             var m = allMotors[i];
             if (m != null && m.blockedHorizontally) return true;
+        }
+        return false;
+    }
+    static void NormalizeAllPhysics()
+    {
+        if (allMotors.Count < 2) return;
+        var refMotor = allMotors[0];
+        foreach (var m in allMotors)
+        {
+            if (m == null || m.rb == null) continue;
+
+            // movement constants
+            m.moveSpeed = refMotor.moveSpeed;
+            m.acceleration = refMotor.acceleration;
+            m.airControlMultiplier = refMotor.airControlMultiplier;
+
+            // Rigidbody constants (updated API)
+            m.rb.mass = refMotor.rb.mass;
+            m.rb.linearDamping = refMotor.rb.linearDamping;     // ✅ new name
+            m.rb.angularDamping = refMotor.rb.angularDamping;   // ✅ new name
+            m.rb.gravityScale = refMotor.rb.gravityScale;
+            m.rb.interpolation = refMotor.rb.interpolation;
+            m.rb.collisionDetectionMode = refMotor.rb.collisionDetectionMode;
+
+            // optional: sync collider material too
+            var myCol = m.GetComponent<Collider2D>();
+            var refCol = refMotor.GetComponent<Collider2D>();
+            if (myCol && refCol) myCol.sharedMaterial = refCol.sharedMaterial;
+        }
+    }
+
+
+    // NEW helper: any grounded player currently pressing horizontal input?
+    static bool AnyGroundedHasMoveInput()
+    {
+        for (int i = 0; i < allMotors.Count; i++)
+        {
+            var m = allMotors[i];
+            if (m == null) continue;
+            if (m.isGrounded && Mathf.Abs(m.inputX) > 0.05f)
+                return true;
         }
         return false;
     }
@@ -194,13 +244,32 @@ public class CharacterMotor2D : MonoBehaviour
         }
     }
 
+    static void SyncAllStats()
+    {
+        if (allMotors.Count < 2) return;
+
+        // Use the first character as reference
+        var refMotor = allMotors[0];
+        foreach (var m in allMotors)
+        {
+            if (m == null) continue;
+            m.moveSpeed = refMotor.moveSpeed;
+            m.acceleration = refMotor.acceleration;
+            m.mass = refMotor.mass;
+            if (m.rb != null) m.rb.mass = refMotor.mass; // make sure Rigidbody mass also updates
+        }
+    }
+
+
     public static void UnfreezeAll()
     {
         globallyFrozen = false;
 
+        // Optional tiny separation nudge to avoid instant re-block
         var any = (allMotors.Count > 0) ? allMotors[0] : null;
         if (any != null) any.StartCoroutine(any.EscapeFromWall());
     }
+
     IEnumerator EscapeFromWall()
     {
         for (int i = 0; i < allMotors.Count; i++)
@@ -211,11 +280,9 @@ public class CharacterMotor2D : MonoBehaviour
             float nx = m.lastBlockNormalX;
             if (Mathf.Abs(nx) < 0.01f) continue;
 
-            // Small positional away from the wall
             Vector2 delta = new Vector2(nx * 0.02f, 0f);
             m.rb.position += delta;
 
-            // Clear the block  next frame doesn't instantly freeze
             m.blockedHorizontally = false;
             m.lastBlockNormalX = 0f;
         }
@@ -226,8 +293,8 @@ public class CharacterMotor2D : MonoBehaviour
     // Input
     public void SetMoveInput(float x)
     {
-        inputX = x;                 
-        targetXVel = x * moveSpeed; // compute desired speed (ignored when frozen)
+        inputX = x;
+        targetXVel = x * moveSpeed;
     }
 
     public void PressJump()
@@ -260,14 +327,9 @@ public class CharacterMotor2D : MonoBehaviour
 
     void Start()
     {
-        if (characterColor == "Red")
-        {
-            gameObject.tag = "RedCharacter";
-        }
-        else if (characterColor == "Green")
-        {
-            gameObject.tag = "GreenCharacter";
-        }
+        if (characterColor == "Red") gameObject.tag = "RedCharacter";
+        else if (characterColor == "Green") gameObject.tag = "GreenCharacter";
+        SyncAllStats();
+        NormalizeAllPhysics();
     }
 }
-

@@ -1,30 +1,54 @@
 using UnityEngine;
-using UnityEngine.UI; 
 using TMPro;
 
 public class GameManager : MonoBehaviour
 {
-    private int totalCoins; // Total number of coins in the scene
-    private int remainingCoins; // Number of coins left in the scene
-    [SerializeField] private TextMeshProUGUI winText; // UI Text to show win message
+    [Header("Coin Settings")]
+    [Tooltip("Total number of red coins required")]
+    [SerializeField] private int totalRedCoins = 5;
+
+    [Tooltip("Total number of green coins required")]
+    [SerializeField] private int totalGreenCoins = 5;
+
+    private int remainingRedCoins;
+    private int remainingGreenCoins;
+
+    [Header("UI")]
+    [SerializeField] private TextMeshProUGUI winText;        // Assign in Inspector
+    [SerializeField] private TextMeshProUGUI coinCounterText; // Optional coin counter text
 
     void Start()
     {
-        CoinCollection[] coins = FindObjectsOfType<CoinCollection>();
-        totalCoins = coins.Length;
-        remainingCoins = totalCoins;
+        remainingRedCoins = totalRedCoins;
+        remainingGreenCoins = totalGreenCoins;
 
         if (winText != null)
-        {
-            winText.enabled = false;
-        }
+            winText.gameObject.SetActive(false);
+
+        UpdateUI();
     }
 
-    public void CollectCoin()
+    // Called by RedCoin.cs
+    public void CollectRedCoin()
     {
-        remainingCoins--;
+        remainingRedCoins = Mathf.Max(remainingRedCoins - 1, 0);
+        Debug.Log($"[GameManager] Red coin collected. Remaining: {remainingRedCoins}/{totalRedCoins}");
+        CheckWinCondition();
+        UpdateUI();
+    }
 
-        if (remainingCoins <= 0)
+    // Called by GreenCoin.cs
+    public void CollectGreenCoin()
+    {
+        remainingGreenCoins = Mathf.Max(remainingGreenCoins - 1, 0);
+        Debug.Log($"[GameManager] Green coin collected. Remaining: {remainingGreenCoins}/{totalGreenCoins}");
+        CheckWinCondition();
+        UpdateUI();
+    }
+
+    private void CheckWinCondition()
+    {
+        if (remainingRedCoins <= 0 && remainingGreenCoins <= 0)
         {
             WinGame();
         }
@@ -32,10 +56,21 @@ public class GameManager : MonoBehaviour
 
     private void WinGame()
     {
+        Debug.Log("[GameManager] You Win!");
+
         if (winText != null)
         {
             winText.text = "You Win!";
-            winText.enabled = true;
+            winText.gameObject.SetActive(true);
+        }
+    }
+
+    private void UpdateUI()
+    {
+        if (coinCounterText != null)
+        {
+            coinCounterText.text = $"Red: {remainingRedCoins}/{totalRedCoins}  |  Green: {remainingGreenCoins}/{totalGreenCoins}";
         }
     }
 }
+
